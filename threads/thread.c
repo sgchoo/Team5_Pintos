@@ -627,19 +627,22 @@ thread_awake(int64_t cur_tick)
 
 	origin_level = intr_disable();
 
-	temp_element = list_head(&sleep_list);
+	temp_element = list_begin(&sleep_list);
 
 	while(temp_element != list_end(&sleep_list))
 	{
 		struct thread *temp_thread = list_entry(temp_element, struct thread, elem);
 		if(temp_thread->awake_tick <= cur_tick)
 		{
+			printf("before list_remove() call\n");
 			temp_element = list_remove(temp_element);
 			thread_unblock(temp_thread);
+			printf("thread unblock complete\n");
 		}
 		else
 			temp_element = list_next(temp_element);
 	}
 
 	intr_set_level(origin_level);
+	// intr_enable();					//얘는 왜 안되지?
 }
