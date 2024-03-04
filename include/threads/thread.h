@@ -140,6 +140,8 @@ void thread_yield (void);
 int thread_get_priority (void);
 void thread_set_priority (int);
 
+bool compare_thread_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED);
+
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);

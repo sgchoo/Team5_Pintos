@@ -187,6 +187,7 @@ thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
 	struct thread *t;
 	tid_t tid;
+	struct thread *cur_thread = thread_current();
 
 	ASSERT (function != NULL);
 
@@ -212,6 +213,13 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+
+	if(!list_empty(&ready_list))
+	{
+		struct thread *begin_thread = list_entry(list_begin(&ready_list), struct thread, elem);
+		if(cur_thread->priority < begin_thread->priority)
+			thread_yield();
+	}
 
 	return tid;
 }
@@ -247,9 +255,19 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	// list_push_back (&ready_list, &t->elem);		// insert_order change
+	list_insert_ordered(&ready_list, &t->elem, compare_thread_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
+}
+
+bool
+compare_thread_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED)
+{
+	struct thread *thread_a = list_entry(a, struct thread, elem);
+	struct thread *thread_b = list_entry(b, struct thread, elem);
+
+	return thread_a->priority > thread_b->priority;
 }
 
 /* Returns the name of the running thread. */
@@ -310,7 +328,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, compare_thread_priority, NULL);
+		// list_push_back (&ready_list, &curr->elem);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -634,10 +653,8 @@ thread_awake(int64_t cur_tick)
 		struct thread *temp_thread = list_entry(temp_element, struct thread, elem);
 		if(temp_thread->awake_tick <= cur_tick)
 		{
-			printf("before list_remove() call\n");
 			temp_element = list_remove(temp_element);
 			thread_unblock(temp_thread);
-			printf("thread unblock complete\n");
 		}
 		else
 			temp_element = list_next(temp_element);
