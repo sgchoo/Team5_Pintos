@@ -337,13 +337,14 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->origin_priority = new_priority;
+	// change_donation_priority(); // origin priority compare
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) {
-	return thread_current ()->priority;
+	return thread_current()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -434,6 +435,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);		// 현재 스레드의 스택이 시작되는 주소
 	t->priority = priority;
+	t->wait_on_lock = NULL;
+	list_init(&t->donation_list);
+	t->origin_priority = priority;
 	t->magic = THREAD_MAGIC;
 }
 
@@ -661,5 +665,4 @@ thread_awake(int64_t cur_tick)
 	}
 
 	intr_set_level(origin_level);
-	// intr_enable();					//얘는 왜 안되지?
 }
