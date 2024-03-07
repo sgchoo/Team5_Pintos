@@ -338,7 +338,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->origin_priority = new_priority;
-	// change_donation_priority(); // origin priority compare
+	change_donation_priority(); // origin priority compare
 }
 
 /* Returns the current thread's priority. */
