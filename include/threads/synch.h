@@ -15,6 +15,7 @@ void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
 void sema_self_test (void);
+bool compare_sema_priority(struct list_elem *, struct list_elem *, void *aux);
 
 /* Lock. */
 struct lock {
@@ -27,6 +28,10 @@ void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);
 void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
+void insert_donation_list(struct list *, struct thread *);
+void set_donation_priority(struct lock *, int, int);
+void remove_donation_list(void);
+void change_donation_priority(void);
 
 /* Condition variable. */
 struct condition {
