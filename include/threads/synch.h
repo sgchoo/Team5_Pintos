@@ -32,6 +32,7 @@ void insert_donation_list(struct list *, struct thread *);
 void set_donation_priority(struct lock *, int, int);
 void remove_donation_list(struct lock *);
 void change_donation_priority(void);
+bool cmp_lock_priority(struct list_elem *, struct list_elem *, void *);
 
 /* Condition variable. */
 struct condition {

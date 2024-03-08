@@ -270,6 +270,15 @@ compare_thread_priority(struct list_elem *a, struct list_elem *b, void *aux UNUS
 	return thread_a->priority > thread_b->priority;
 }
 
+bool
+compare_thread_origin_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED)
+{
+	struct thread *thread_a = list_entry(a, struct thread, elem);
+	struct thread *thread_b = list_entry(b, struct thread, elem);
+
+	return thread_a->origin_priority > thread_b->origin_priority;
+}
+
 /* Returns the name of the running thread. */
 const char *
 thread_name (void) {
@@ -337,8 +346,31 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->origin_priority = new_priority;
-	change_donation_priority(); // origin priority compare
+	// thread_current ()->origin_priority = new_priority;
+	// change_donation_priority(); // origin priority compare
+	// list_sort(&ready_list, compare_thread_origin_priority, NULL );
+//------------------------------------------------------------------------------
+	enum intr_level old_level = intr_disable ();
+
+	struct thread *cur = thread_current();
+	struct list_elem *e = list_begin(&(cur->donation_list));
+
+	cur->origin_priority = new_priority;
+	cur->priority = new_priority;
+
+	while (e != list_end(&(cur->donation_list))) {
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+		if (t->priority > cur->priority)
+			cur->priority = t->priority;
+		e = e->next;
+	}
+	if (cur->priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority) {
+		if (cur != idle_thread)
+			list_insert_ordered(&ready_list, &cur->elem, compare_thread_priority, NULL);
+		do_schedule (THREAD_READY);
+	}
+	intr_set_level (old_level);
+
 }
 
 /* Returns the current thread's priority. */
