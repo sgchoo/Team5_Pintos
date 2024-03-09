@@ -210,13 +210,17 @@ lock_acquire (struct lock *lock) {
 	//------------------------------------------------------------------------------------------------
 	struct thread *cur = thread_current();
 
-	if (lock->holder) {
-		// Todo 1
-		cur->wait_on_lock = lock;
-		// Todo 2
-		list_insert_ordered(&(lock->holder->donation_list), &(cur->donation_elem), cmp_lock_priority, NULL);
-		// Todo 3
-		donate_priority();
+	if(!thread_mlfqs)
+	{
+
+		if (lock->holder) {
+			// Todo 1
+			cur->wait_on_lock = lock;
+			// Todo 2
+			list_insert_ordered(&(lock->holder->donation_list), &(cur->donation_elem), cmp_lock_priority, NULL);
+			// Todo 3
+			donate_priority();
+		}
 	}
 
 	sema_down (&lock->semaphore);
@@ -301,23 +305,27 @@ lock_release (struct lock *lock) {
 	// remove_donation_list(lock);
 	// change_donation_priority();
 	//----------------------------------------------------------------------------------
-	struct	list_elem	*e = list_begin(&(lock->holder->donation_list));
-	int					max_priority = lock->holder->origin_priority;
+	if(!thread_mlfqs)
+	{
+		struct	list_elem	*e = list_begin(&(lock->holder->donation_list));
+		int					max_priority = lock->holder->origin_priority;
 
-	while (e != list_end(&(lock->holder->donation_list))) {
-		struct thread *t = list_entry(e, struct thread, donation_elem);
-		if (t->wait_on_lock == lock) {
-			t->wait_on_lock = NULL;
-			e = list_remove(e);
-			
-		} else {
-			if (t->priority > max_priority)
-				max_priority = t->priority;
-			e = list_next(e);
+		while (e != list_end(&(lock->holder->donation_list))) {
+			struct thread *t = list_entry(e, struct thread, donation_elem);
+			if (t->wait_on_lock == lock) {
+				t->wait_on_lock = NULL;
+				e = list_remove(e);
+				
+			} else {
+				if (t->priority > max_priority)
+					max_priority = t->priority;
+				e = list_next(e);
+			}
 		}
+
+		lock->holder->priority = max_priority;
 	}
 
-	lock->holder->priority = max_priority;
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }

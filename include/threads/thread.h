@@ -96,6 +96,8 @@ struct thread {
 	struct lock *wait_on_lock;
 	struct list_elem donation_elem;
 	int origin_priority;
+	int recent_cpu;
+	int nice;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -151,6 +153,25 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void increase_recent_cpu(void);
+void recalculate_priority();
+void recalculate_recent_cpu(void);
+void recalculate_load_avg(void);
+int priority_cal(int, int);
+int recent_cpu_cal(int, int, int);
+int	load_avg_cal(int, int);
+int int_to_fp(int);
+int fp_to_int(int);
+int fp_to_int_round(int);
+int add_fp(int, int);
+int sub_fp(int, int);
+int add_mixed(int, int);
+int sub_mixed(int, int);
+int mult_fp(int, int);
+int mult_mixed(int, int);
+int div_fp(int, int);
+int div_mixed(int, int);
 
 void do_iret (struct intr_frame *tf);
 
