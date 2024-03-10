@@ -30,8 +30,9 @@ void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
 void insert_donation_list(struct list *, struct thread *);
 void set_donation_priority(struct lock *, int, int);
-void remove_donation_list(void);
+void remove_donation_list(struct lock *);
 void change_donation_priority(void);
+bool cmp_lock_priority(struct list_elem *, struct list_elem *, void *);
 
 /* Condition variable. */
 struct condition {

@@ -54,6 +54,12 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
+#define FRACTIONAL  			(1 << 14)
+#define RECENT_CPU_DEFAULT		0
+#define LOAD_AVG_DEFAULT		0
+#define NICE_DEFAULT			0
+
+static int load_avg;
 bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
@@ -129,6 +135,9 @@ void
 thread_start (void) {
 	/* Create the idle thread. */
 	struct semaphore idle_started;
+
+	load_avg = LOAD_AVG_DEFAULT;
+
 	sema_init (&idle_started, 0);
 	thread_create ("idle", PRI_MIN, idle, &idle_started);
 
@@ -270,6 +279,15 @@ compare_thread_priority(struct list_elem *a, struct list_elem *b, void *aux UNUS
 	return thread_a->priority > thread_b->priority;
 }
 
+bool
+compare_thread_origin_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED)
+{
+	struct thread *thread_a = list_entry(a, struct thread, elem);
+	struct thread *thread_b = list_entry(b, struct thread, elem);
+
+	return thread_a->origin_priority > thread_b->origin_priority;
+}
+
 /* Returns the name of the running thread. */
 const char *
 thread_name (void) {
@@ -337,8 +355,33 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->origin_priority = new_priority;
+	// thread_current ()->origin_priority = new_priority;
 	// change_donation_priority(); // origin priority compare
+	// list_sort(&ready_list, compare_thread_origin_priority, NULL );
+//------------------------------------------------------------------------------
+	if(thread_mlfqs)
+		return;
+
+	enum intr_level old_level = intr_disable ();
+
+	struct thread *cur = thread_current();
+	struct list_elem *e = list_begin(&(cur->donation_list));
+
+	cur->origin_priority = new_priority;
+	cur->priority = new_priority;
+
+	while (e != list_end(&(cur->donation_list))) {
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+		if (t->priority > cur->priority)
+			cur->priority = t->priority;
+		e = e->next;
+	}
+	if (cur->priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority) {
+		if (cur != idle_thread)
+			list_insert_ordered(&ready_list, &cur->elem, compare_thread_priority, NULL);
+		do_schedule (THREAD_READY);
+	}
+	intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -351,27 +394,29 @@ thread_get_priority (void) {
 void
 thread_set_nice (int nice UNUSED) {
 	/* TODO: Your implementation goes here */
+	return thread_current()->nice = nice;
+	// priority recalculate
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return fp_to_int_round(mult_mixed(load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return fp_to_int_round(mult_mixed(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -438,6 +483,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->wait_on_lock = NULL;
 	list_init(&t->donation_list);
 	t->origin_priority = priority;
+	t->nice = NICE_DEFAULT;
+	t->recent_cpu = RECENT_CPU_DEFAULT;
 	t->magic = THREAD_MAGIC;
 }
 
@@ -608,7 +655,6 @@ schedule (void) {
 }
 
 /* Returns a tid to use for a new thread. */
-//??
 static tid_t
 allocate_tid (void) {
 	static tid_t next_tid = 1;
@@ -665,4 +711,151 @@ thread_awake(int64_t cur_tick)
 	}
 
 	intr_set_level(origin_level);
+}
+
+void
+increase_recent_cpu(void)
+{
+	struct thread 		*cur_thread = thread_current();
+	int					recent = cur_thread->recent_cpu;
+
+	if(cur_thread != idle_thread)
+		cur_thread->recent_cpu = add_mixed(recent, 1);
+
+}
+
+void
+recalculate_priority(void)
+{
+	struct thread		*cur_thread = thread_current();
+	struct list_elem	*temp_elem;
+
+	if(cur_thread != idle_thread)
+		cur_thread->priority = priority_cal(cur_thread->recent_cpu, cur_thread->nice) /*(int)(PRI_MAX - (cur_thread->recent_cpu / 4) - (cur_thread->nice * 2))*/;
+
+	for(temp_elem = list_begin(&ready_list); temp_elem != list_end(&ready_list); temp_elem = list_next(temp_elem))
+	{
+		struct thread	*temp_thread = list_entry(temp_elem, struct thread, elem);
+
+		temp_thread->priority = priority_cal(temp_thread->recent_cpu, temp_thread->nice) /*(int)(PRI_MAX - (temp_thread->recent_cpu / 4) - (temp_thread->nice * 2))*/;
+	}
+}
+
+int
+priority_cal(int recent, int nice)
+{
+	int fp_recent_cpu = div_mixed(recent, 4);
+	int fp_pri_max = int_to_fp(PRI_MAX);
+	int sub_recent_from_max = sub_fp(fp_pri_max, fp_recent_cpu);
+
+	return fp_to_int_round(sub_mixed(sub_recent_from_max, (nice * 2)));
+}
+
+void
+recalculate_recent_cpu(void)
+{
+	struct thread		*cur_thread = thread_current();
+	struct list_elem	*temp_elem;
+	int 				nice = cur_thread->nice;
+	int					recent_cpu = cur_thread->recent_cpu;
+
+	if(cur_thread != idle_thread)
+		cur_thread->recent_cpu = recent_cpu_cal(recent_cpu, load_avg, nice);
+
+	for(temp_elem = list_begin(&ready_list); temp_elem != list_end(&ready_list); temp_elem = list_next(temp_elem))
+	{
+		struct thread	*temp_thread = list_entry(temp_elem, struct thread, elem);
+		int 			nice = temp_thread->nice;
+		int				recent_cpu = temp_thread->recent_cpu;
+
+		temp_thread->recent_cpu = recent_cpu_cal(recent_cpu, load_avg, nice);
+	}
+
+	// 모든 리스트 cpu 업데이트
+}
+
+int
+recent_cpu_cal(int recent_cpu, int load_avg, int nice)
+{
+	int decay = div_fp(load_avg * 2, add_mixed((load_avg * 2), 1));
+
+	return add_mixed(mult_fp(decay, recent_cpu), nice);
+}
+
+void
+recalculate_load_avg(void)
+{
+	struct thread		*cur_thread			 = thread_current();
+	int					size				 = list_size(&ready_list);
+	int 				ready_threads_count	 = cur_thread == idle_thread ? size : size + 1;
+	
+	load_avg = load_avg_cal(load_avg, ready_threads_count);
+}
+
+int
+load_avg_cal(int load, int ready_threads)
+{
+	int fp_59	 = int_to_fp(59);
+	int fp_1	 = int_to_fp(1);
+
+	return add_fp(mult_fp(div_mixed(fp_59, 60), load), 
+				  mult_mixed(div_mixed(fp_1, 60), ready_threads)); 
+}
+
+int int_to_fp(int num)
+{
+    return num * FRACTIONAL;
+}
+
+int fp_to_int(int fp)
+{
+    return fp / FRACTIONAL;
+}
+
+int fp_to_int_round(int fp)
+{
+    if(fp > 0)
+        return (fp + (FRACTIONAL / 2)) / FRACTIONAL;
+    else
+        return (fp - (FRACTIONAL / 2)) / FRACTIONAL;
+}
+
+int add_fp(int fp1, int fp2)
+{
+    return fp1 + fp2;
+}
+
+int add_mixed(int fp, int num)
+{
+    return fp + (num * FRACTIONAL);
+}
+
+int sub_fp(int fp1, int fp2)
+{
+    return fp1 - fp2;
+}
+
+int sub_mixed(int fp, int num)
+{
+    return fp - (num * FRACTIONAL);
+}
+
+int mult_fp(int fp1, int fp2)
+{
+    return ((int64_t)fp1) * fp2 / FRACTIONAL;
+}
+
+int mult_mixed(int fp, int num)
+{
+    return fp * num;
+}
+
+int div_fp(int fp1, int fp2)
+{
+    return ((int64_t)fp1) * FRACTIONAL / fp2;
+}
+
+int div_mixed(int fp, int num)
+{
+    return fp / num;
 }
