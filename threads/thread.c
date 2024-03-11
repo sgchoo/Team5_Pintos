@@ -41,6 +41,7 @@ static struct lock tid_lock;
 static struct list destruction_req;
 
 static struct list sleep_list;
+static struct list all_list;
 
 /* Statistics. */
 static long long idle_ticks;    /* # of timer ticks spent idle. */
@@ -120,12 +121,13 @@ thread_init (void) {
 	// 삭제할 스레드 리스트
 	list_init (&destruction_req);
 	list_init(&sleep_list);
+	list_init(&all_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
+	list_push_back(&all_list, &initial_thread->all_elem);
 	initial_thread->status = THREAD_RUNNING;
-	//
 	initial_thread->tid = allocate_tid ();
 }
 
@@ -208,6 +210,8 @@ thread_create (const char *name, int priority,
 	/* Initialize thread. */
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
+
+	list_push_back(&all_list, &t->all_elem);
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -331,6 +335,7 @@ thread_exit (void) {
 	/* Just set our status to dying and schedule another process.
 	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
+	list_remove(&thread_current()->all_elem);
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
 }
@@ -434,6 +439,8 @@ idle (void *idle_started_ UNUSED) {
 
 	idle_thread = thread_current ();
 	sema_up (idle_started);
+
+	list_remove(&idle_thread->all_elem);
 
 	for (;;) {
 		/* Let someone else run. */
@@ -727,17 +734,13 @@ increase_recent_cpu(void)
 void
 recalculate_priority(void)
 {
-	struct thread		*cur_thread = thread_current();
 	struct list_elem	*temp_elem;
 
-	if(cur_thread != idle_thread)
-		cur_thread->priority = priority_cal(cur_thread->recent_cpu, cur_thread->nice) /*(int)(PRI_MAX - (cur_thread->recent_cpu / 4) - (cur_thread->nice * 2))*/;
-
-	for(temp_elem = list_begin(&ready_list); temp_elem != list_end(&ready_list); temp_elem = list_next(temp_elem))
+	for(temp_elem = list_begin(&all_list); temp_elem != list_end(&all_list); temp_elem = list_next(temp_elem))
 	{
-		struct thread	*temp_thread = list_entry(temp_elem, struct thread, elem);
+		struct thread	*temp_thread = list_entry(temp_elem, struct thread, all_elem);
 
-		temp_thread->priority = priority_cal(temp_thread->recent_cpu, temp_thread->nice) /*(int)(PRI_MAX - (temp_thread->recent_cpu / 4) - (temp_thread->nice * 2))*/;
+		temp_thread->priority = priority_cal(temp_thread->recent_cpu, temp_thread->nice);
 	}
 }
 
@@ -754,24 +757,16 @@ priority_cal(int recent, int nice)
 void
 recalculate_recent_cpu(void)
 {
-	struct thread		*cur_thread = thread_current();
 	struct list_elem	*temp_elem;
-	int 				nice = cur_thread->nice;
-	int					recent_cpu = cur_thread->recent_cpu;
 
-	if(cur_thread != idle_thread)
-		cur_thread->recent_cpu = recent_cpu_cal(recent_cpu, load_avg, nice);
-
-	for(temp_elem = list_begin(&ready_list); temp_elem != list_end(&ready_list); temp_elem = list_next(temp_elem))
+	for(temp_elem = list_begin(&all_list); temp_elem != list_end(&all_list); temp_elem = list_next(temp_elem))
 	{
-		struct thread	*temp_thread = list_entry(temp_elem, struct thread, elem);
+		struct thread	*temp_thread = list_entry(temp_elem, struct thread, all_elem);
 		int 			nice = temp_thread->nice;
 		int				recent_cpu = temp_thread->recent_cpu;
 
 		temp_thread->recent_cpu = recent_cpu_cal(recent_cpu, load_avg, nice);
 	}
-
-	// 모든 리스트 cpu 업데이트
 }
 
 int
