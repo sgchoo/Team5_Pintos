@@ -184,6 +184,8 @@ process_exec (void *f_name) {
 	if (!success)
 		return -1;
 
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+
 	/* Start switched process. */
 	do_iret (&_if);
 	NOT_REACHED ();
@@ -204,6 +206,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	while(1) {}
 	return -1;
 }
 
@@ -328,6 +331,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
+	char		*argv[8];
+	int			argv_len[8];
+	uint64_t	argv_addr[8];
+	int			argv_total_len = 0;
+	int			idx = 0;
+	char *token, *save_ptr, *copy_fn;
+	int argument_count;
+
+	// printf("Asdadf\n");
 
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
@@ -335,8 +347,10 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	process_activate (thread_current ());
 
+	token = strtok_r(file_name, " ", &save_ptr);
+
 	/* Open executable file. */
-	file = filesys_open (file_name);
+	file = filesys_open (token);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
@@ -416,14 +430,102 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	
+	for(int i = 0; i < strlen(save_ptr); i++)
+	{
+		if(save_ptr[i] == ' ')
+			argument_count++;
+	}
+
+	while(token)
+	{
+		argv[idx] = token;
+		argv_len[idx] = strlen(token) + 1;
+		argv_total_len += strlen(token) + 1;
+		idx++;
+		token = strtok_r(NULL, " ", &save_ptr);
+	}
+
+	for(int i = idx - 1; i > -1; i--)
+	{
+		if_->rsp -= argv_len[i];
+		memcpy(if_->rsp, argv[i], argv_len[i]);
+		argv_addr[i] = if_->rsp;
+	}
+
+	if_->rsp -= (8 - (argv_total_len % 8));
+	memset(if_->rsp, 0, (8 - (argv_total_len % 8)));
+	if_->rsp -= sizeof(char *);
+	memset(if_->rsp, 0, sizeof(char *));
+
+	for(int i = idx - 1; i > -1; i--)
+	{
+		if_->rsp -= sizeof(char *);
+		memcpy(if_->rsp, &argv_addr[i], sizeof(char *));
+	}
+
+	if_->rsp -= sizeof(void *);
+	memset(if_->rsp, 0, sizeof(void *));
+
+	if_->R.rdi = argument_count + 1;
+	if_->R.rsi = argv_addr[0];
 
 	success = true;
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	if(file != NULL)
+		file_close (file);
 	return success;
 }
+
+// static void
+// temp_function(char *name_token, char **save_ptr, int argument_count, struct intr_frame *if_)
+// {
+// 	char		*argv[argument_count + 2];
+// 	int			argv_len[argument_count + 2];
+// 	uint64_t	argv_addr[argument_count + 2];
+// 	int			argv_total_len = 0;
+// 	int			idx = 0;
+
+// 	printf("asdasd\n");
+
+// 	while(name_token)
+// 	{
+// 		argv[idx] = name_token;
+// 		argv_len[idx] = strlen(name_token) + 1;
+// 		argv_total_len += strlen(name_token) + 1;
+// 		idx++;
+// 		name_token = strtok_r(NULL, " ", save_ptr);
+// 	}
+
+// 	printf("aasdgwrgh\n");
+
+// 	for(int i = idx - 1; i > -1; i--)
+// 	{
+// 		if_->rsp -= argv_len[i];
+// 		memset(&if_->rsp, *argv[i], argv_len[i]);
+// 		printf("if_->rsp: %p\n", &if_->rsp);
+// 		argv_addr[i] = if_->rsp;
+// 	}
+
+// 	if_->rsp -= (argv_total_len + (argv_total_len % 8));
+// 	memset(&if_->rsp, 0, (argv_total_len + (argv_total_len % 8)));
+// 	if_->rsp -= sizeof(char *);
+// 	memset(&if_->rsp, 0, sizeof(char *));
+
+// 	for(int i = idx - 1; i > -1; i--)
+// 	{
+// 		if_->rsp -= sizeof(char *);
+// 		memset(&if_->rsp, argv_addr[i], sizeof(char *));
+// 	}
+
+// 	if_->rsp -= sizeof(void *);
+// 	memset(&if_->rsp, 0, sizeof(void *));
+
+// 	if_->R.rdi = argument_count + 1;
+// 	if_->R.rsi = argv_addr[0];
+// }
 
 
 /* Checks whether PHDR describes a valid, loadable segment in
