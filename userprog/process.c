@@ -41,6 +41,7 @@ process_init (void) {
 tid_t
 process_create_initd (const char *file_name) {
 	char *fn_copy;
+	char *token, *save_ptr;
 	tid_t tid;
 
 	/* Make a copy of FILE_NAME.
@@ -50,8 +51,10 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	token = strtok_r(file_name, " ", &save_ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	tid = thread_create (token, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -89,25 +92,36 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	struct thread *parent = (struct thread *) aux;
 	void *parent_page;
 	void *newpage;
-	bool writable;
+	bool writable = false;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
-
+	// if(is_kernel_vaddr(va/*pte*/))
+	// 	return false;
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+	// newpage = palloc_get_page(4);
+	// if(newpage == TID_ERROR)
+	// 	palloc_free_page(newpage);
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	// memcpy(parent_page, newpage, sizeof(PGSIZE));
+	// if(is_writable(pte))
+	// 	writable = true;
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		// return false;
+		/* do re-check */
 	}
+
+	palloc_free_page(newpage);
 	return true;
 }
 #endif
@@ -122,7 +136,7 @@ __do_fork (void *aux) {
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	struct intr_frame *parent_if;
+	struct intr_frame *parent_if = &parent->tf;
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
@@ -148,6 +162,10 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
+
+	// sema_down();
+	// file_duplicate();
+	// sema_up();
 
 	process_init ();
 
@@ -184,7 +202,7 @@ process_exec (void *f_name) {
 	if (!success)
 		return -1;
 
-	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+	// hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* Start switched process. */
 	do_iret (&_if);
@@ -206,7 +224,8 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	while(1) {}
+	// while(1) {}
+	timer_sleep(10);
 	return -1;
 }
 
@@ -218,7 +237,7 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
+	// printf("%s: exit(%d)\n", curr->name, curr->exit_status);
 	process_cleanup ();
 }
 
@@ -331,13 +350,13 @@ load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
-	char		*argv[8];
-	int			argv_len[8];
-	uint64_t	argv_addr[8];
+	char		*argv[25];
+	int			argv_len[25];
+	uint64_t	argv_addr[25];
 	int			argv_total_len = 0;
 	int			idx = 0;
 	char *token, *save_ptr, *copy_fn;
-	int argument_count;
+	int argument_count = 0;
 
 	// printf("Asdadf\n");
 
@@ -430,12 +449,6 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-	
-	for(int i = 0; i < strlen(save_ptr); i++)
-	{
-		if(save_ptr[i] == ' ')
-			argument_count++;
-	}
 
 	while(token)
 	{
@@ -464,11 +477,12 @@ load (const char *file_name, struct intr_frame *if_) {
 		memcpy(if_->rsp, &argv_addr[i], sizeof(char *));
 	}
 
+	if_->R.rsi = if_->rsp;
+
 	if_->rsp -= sizeof(void *);
 	memset(if_->rsp, 0, sizeof(void *));
 
-	if_->R.rdi = argument_count + 1;
-	if_->R.rsi = argv_addr[0];
+	if_->R.rdi = idx;
 
 	success = true;
 
@@ -478,55 +492,6 @@ done:
 		file_close (file);
 	return success;
 }
-
-// static void
-// temp_function(char *name_token, char **save_ptr, int argument_count, struct intr_frame *if_)
-// {
-// 	char		*argv[argument_count + 2];
-// 	int			argv_len[argument_count + 2];
-// 	uint64_t	argv_addr[argument_count + 2];
-// 	int			argv_total_len = 0;
-// 	int			idx = 0;
-
-// 	printf("asdasd\n");
-
-// 	while(name_token)
-// 	{
-// 		argv[idx] = name_token;
-// 		argv_len[idx] = strlen(name_token) + 1;
-// 		argv_total_len += strlen(name_token) + 1;
-// 		idx++;
-// 		name_token = strtok_r(NULL, " ", save_ptr);
-// 	}
-
-// 	printf("aasdgwrgh\n");
-
-// 	for(int i = idx - 1; i > -1; i--)
-// 	{
-// 		if_->rsp -= argv_len[i];
-// 		memset(&if_->rsp, *argv[i], argv_len[i]);
-// 		printf("if_->rsp: %p\n", &if_->rsp);
-// 		argv_addr[i] = if_->rsp;
-// 	}
-
-// 	if_->rsp -= (argv_total_len + (argv_total_len % 8));
-// 	memset(&if_->rsp, 0, (argv_total_len + (argv_total_len % 8)));
-// 	if_->rsp -= sizeof(char *);
-// 	memset(&if_->rsp, 0, sizeof(char *));
-
-// 	for(int i = idx - 1; i > -1; i--)
-// 	{
-// 		if_->rsp -= sizeof(char *);
-// 		memset(&if_->rsp, argv_addr[i], sizeof(char *));
-// 	}
-
-// 	if_->rsp -= sizeof(void *);
-// 	memset(&if_->rsp, 0, sizeof(void *));
-
-// 	if_->R.rdi = argument_count + 1;
-// 	if_->R.rsi = argv_addr[0];
-// }
-
 
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */

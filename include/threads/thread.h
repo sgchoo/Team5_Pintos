@@ -98,6 +98,9 @@ struct thread {
 	int origin_priority;
 	int recent_cpu;
 	int nice;
+	int exit_status;
+	struct file *file_table[64];
+	int fd;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */

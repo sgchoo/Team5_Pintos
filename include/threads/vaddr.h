@@ -35,7 +35,7 @@
 #define KERN_BASE LOADER_KERN_BASE
 
 /* User stack start */
-#define USER_STACK 0x47480000   // 왜 8만큼 더 위에를 찍지?
+#define USER_STACK 0x47480000
 
 /* Returns true if VADDR is a user virtual address. */
 #define is_user_vaddr(vaddr) (!is_kernel_vaddr((vaddr)))

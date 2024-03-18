@@ -492,7 +492,13 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->origin_priority = priority;
 	t->nice = NICE_DEFAULT;
 	t->recent_cpu = RECENT_CPU_DEFAULT;
+	t->exit_status = 0;
+	#ifdef USERPROG
+		t->fd = 3;
+	#endif
+	memset(t->file_table, 0, sizeof(t->file_table));
 	t->magic = THREAD_MAGIC;
+
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
