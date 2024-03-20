@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,6 +28,9 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+#define ALIVE_CHILD -2
+#define ALREADY_WAIT -3
 
 /* A kernel thread or user process.
  *
@@ -105,6 +109,15 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 	struct list_elem all_elem;
+
+	struct list child_list;
+	struct list_elem child_elem;
+	struct thread *parent;
+	struct intr_frame parent_if;
+	bool is_wait;
+	struct semaphore wait_sema;
+	struct semaphore exit_sema;
+	struct semaphore fork_sema;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

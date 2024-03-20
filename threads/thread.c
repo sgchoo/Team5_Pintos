@@ -213,6 +213,9 @@ thread_create (const char *name, int priority,
 
 	list_push_back(&all_list, &t->all_elem);
 
+	list_push_back(&cur_thread->child_list, &t->child_elem);
+	t->parent = cur_thread;
+
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
@@ -230,7 +233,7 @@ thread_create (const char *name, int priority,
 	if(!list_empty(&ready_list))
 	{
 		struct thread *begin_thread = list_entry(list_begin(&ready_list), struct thread, elem);
-		if(cur_thread->priority < begin_thread->priority)
+		if(cur_thread->priority <= begin_thread->priority)
 			thread_yield();
 	}
 
@@ -310,6 +313,7 @@ thread_current (void) {
 	   have overflowed its stack.  Each thread has less than 4 kB
 	   of stack, so a few big automatic arrays or moderate
 	   recursion can cause stack overflow. */
+
 	ASSERT (is_thread (t));
 	ASSERT (t->status == THREAD_RUNNING);
 
@@ -348,11 +352,11 @@ thread_yield (void) {
 	enum intr_level old_level;
 
 	ASSERT (!intr_context ());
-
+	
 	old_level = intr_disable ();
 	if (curr != idle_thread)
 		list_insert_ordered(&ready_list, &curr->elem, compare_thread_priority, NULL);
-		// list_push_back (&ready_list, &curr->elem);
+
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -360,10 +364,6 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	// thread_current ()->origin_priority = new_priority;
-	// change_donation_priority(); // origin priority compare
-	// list_sort(&ready_list, compare_thread_origin_priority, NULL );
-//------------------------------------------------------------------------------
 	if(thread_mlfqs)
 		return;
 
@@ -497,6 +497,13 @@ init_thread (struct thread *t, const char *name, int priority) {
 		t->fd = 3;
 	#endif
 	memset(t->file_table, 0, sizeof(t->file_table));
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->exit_sema, 0);
+	sema_init(&t->fork_sema, 0);
+	list_init(&t->child_list);
+	t->exit_status = ALIVE_CHILD;
+	t->is_wait = false;
+	t->parent = NULL;
 	t->magic = THREAD_MAGIC;
 
 }

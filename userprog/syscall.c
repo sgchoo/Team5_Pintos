@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include <stdio.h>
+#include <string.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -10,6 +11,9 @@
 #include "intrinsic.h"
 #include "filesys/filesys.h"
 #include "include/filesys/file.h"
+#include "lib/user/syscall.h"
+#include "threads/palloc.h"
+
 
 void		syscall_entry (void);
 void		check_syscall_handler(struct intr_frame *);
@@ -19,9 +23,9 @@ bool		check_valid_address(uint64_t *);
 
 void		halt(void);
 void		exit(int);
-tid_t		fork(const char *);
+pid_t		fork(const char *);
 int			exec(const char *);
-int			wait(tid_t);
+int			wait(pid_t);
 int 		write (int, const void *, unsigned);
 bool 		create(const char *, unsigned);
 bool 		remove(const char *);
@@ -79,14 +83,22 @@ check_syscall_handler(struct intr_frame *if_)
 			exit(if_->R.rdi);
 			break;
 		case SYS_FORK:
-			// if_->R.rax = fork(if_->R.rdi);
+			if(check_valid_address(if_->R.rdi))
+			{
+				memcpy(&thread_current()->parent_if, if_, sizeof(struct intr_frame));
+				if_->R.rax = fork(if_->R.rdi);
+			}
+			else
+				exit(-1);
 			break;
 		case SYS_EXEC:
-			if((exec(if_->R.rdi)) == -1)
+			if(check_valid_address(if_->R.rdi))
+				if_->R.rax = exec(if_->R.rdi);
+			else
 				exit(-1);
 			break;
 		case SYS_WAIT:
-			// if_->R.rax = wait(if_->R.rdi);
+			if_->R.rax = wait(if_->R.rdi);
 			break;
 		case SYS_CREATE:
 			if(check_valid_address(if_->R.rdi))
@@ -160,36 +172,43 @@ exit(int status)
 	struct	thread *cur_thread = thread_current();
 
 	cur_thread->exit_status = status;
-	printf("%s: exit(%d)\n", cur_thread->name, cur_thread->exit_status);
+
+	printf("%s: exit(%d)\n", cur_thread->name, status);
 
 	thread_exit();
 }
 
-// tid_t
-// fork(const char *thread_name)
-// {
-// 	return process_fork(thread_name, &thread_current()->tf);
-// }
+pid_t
+fork(const char *thread_name)
+{
+	return process_fork(thread_name, &thread_current()->parent_if);
+}
 
 int
 exec(const char *cmd_line)
 {
-	int success = 0;
+	char *copy_fn;
 
-	// if(check_valid_address(thread_current()->tf.rip))
-	// 	return thread_current()->exit_status - 1;
+	copy_fn = palloc_get_page(PAL_ZERO);
 
-	// success = process_exec(cmd_line);
+	if(copy_fn == NULL)
+		return -1;
 
-	// if(success == -1)
-	// 	return thread_current()->exit_status - 1;
+	strlcpy(copy_fn, cmd_line, PGSIZE);
+
+	if(process_exec(copy_fn) < 0)
+	{
+		exit(-1);
+		return -1;
+	}
+	NOT_REACHED();
 }
 
-// int
-// wait(tid_t pid)
-// {
-// 	return process_wait(pid);
-// }
+int
+wait(pid_t pid)
+{
+	return process_wait(pid);
+}
 
 bool
 create(const char *file, unsigned initial_size)
