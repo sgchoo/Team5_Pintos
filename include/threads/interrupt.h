@@ -52,13 +52,13 @@ struct intr_frame {
 	uint64_t error_code;
 /* Pushed by the CPU.
    These are the interrupted task's saved registers. */
-	uintptr_t rip;
-	uint16_t cs;
+	uintptr_t rip;			// Next instruction to execute
+	uint16_t cs;			// Code segment for rip
 	uint16_t __pad5;
 	uint32_t __pad6;
-	uint64_t eflags;
-	uintptr_t rsp;
-	uint16_t ss;
+	uint64_t eflags;		// Saved CPU flags
+	uintptr_t rsp;			// Saved stack pointer
+	uint16_t ss;			// Data segment for rsp
 	uint16_t __pad7;
 	uint32_t __pad8;
 } __attribute__((packed));
